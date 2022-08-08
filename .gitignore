@@ -1,4 +1,5 @@
 words_alpha.txt
 .idea
+*.csv
 
 package.json
