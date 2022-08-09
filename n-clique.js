@@ -14,7 +14,21 @@ const fs = require('fs'); // for file I/O
 
 /* ---------- BEGIN CREATING GLOBAL VARS ----------------*/
 
+/**
+ * Number of output lines
+ *
+ * @type {number}
+ */
 let totalCombinationsFound = 0;
+
+/**
+ * This is the count of **all words being considered**. Not to be confused with the length of the [data]{@link data}, for that does not have anagrams included
+ *
+ * @see {@link anagramMappings} for more on anagrams
+ *
+ * @type {number}
+ */
+let wordCount = 0;
 
 /**
  * This is a Dictionary that the alpabetically sorted word as the key (aka "".split("").sort().join()),
@@ -95,6 +109,12 @@ if (globalOptions.wordcount < 2 || globalOptions.wordsize < 2) {
     process.exit(-1);
 }
 
+//print options
+console.log("Running with settings:");
+for (const [globalOptionsKey, globalOptionsValue] of Object.entries(globalOptions)) {
+    console.log(globalOptionsKey, globalOptionsValue);
+}
+
 /* ---------- BEGIN PURE UTILITY FUNCTIONS ----------------*/
 
 //these functions can be put in a seperate file and not really care at all
@@ -133,6 +153,8 @@ function intersection(setA, setB) {
  *
  * @return T[][]
  *
+ * @see https://stackoverflow.com/questions/53311809/all-possible-combinations-of-a-2d-array-in-javascript
+ *
  * @template T
  */
 function recursiveCombinations(list, n = 0, result = [], current = []) {
@@ -153,6 +175,8 @@ function recursiveCombinations(list, n = 0, result = [], current = []) {
  * Just the default async callback to detect an I/O error and tell you all about it
  *
  * @param {NodeJS.ErrnoException|number} err
+ *
+ * @deprecated Async isnt very good for constant appending, as it causes memory leakage
  */
 function fsCallback(err) {
     if (err) {
@@ -170,7 +194,7 @@ function fsCallback(err) {
  */
 function outputResult(...res) {
     if (globalOptions.includeanagrams) {
-        let recurses = recursiveCombinations(res.map(windex => anagramMappings[data[windex].chars.join("")]));
+        let recurses = recursiveCombinations(res.map(windex => anagramMappings[data[windex].dictIndex]));
         fs.appendFileSync(globalOptions.outfile,
             recurses
                 .reduce((previousValue, currentValue) => {
@@ -179,7 +203,7 @@ function outputResult(...res) {
         return recurses.length;
     } else {
         fs.appendFileSync(globalOptions.outfile, res.reduce((previousValue, currentValue, currentIndex, array) => {
-            return previousValue + anagramMappings[data[currentValue].chars.join("")][0] + (currentIndex !== array.length - 1 ? "," : "");
+            return previousValue + anagramMappings[data[currentValue].dictIndex][0] + (currentIndex !== array.length - 1 ? "," : "");
         }, "") + "\n");
         return 1;
     }
@@ -210,21 +234,22 @@ process.on('exit', () => console.log("Completed in", getTime(), "ms"));
 
 process.stdout.write("Reading in data        \r");
 
-let wordCount = 0;
-
 /**
+ * This array will have objects for each of the letters, and will be sorted later, so we include the original char as an anchor
+ *
  * @type {{char: String, val: Number}[]}
  */
-let buckets = [];
+let letterDistributions = [];
 
+//init it
 for (let i = 'a'.charCodeAt(0); i <= 'z'.charCodeAt(0); i++) {
-    buckets.push({char: String.fromCharCode(i), val: 0});
+    letterDistributions.push({char: String.fromCharCode(i), val: 0});
 }
 
 /**
- * The real deal. Here comes the data!
+ * The real deal. Here comes the data! Read in the data and store it for later
  *
- * @type {[{neighbors: number[], word: String, chars: String[]}]}
+ * @type {[{neighbors: number[], word: String, chars: String[], winnersection: number, dictIndex: String}]}
  */
 const data = fs.readFileSync("words_alpha.txt").toString().split(/\r?\n/).reduce((prev, line) => {
     if (line.length === globalOptions.wordsize) {
@@ -236,12 +261,13 @@ const data = fs.readFileSync("words_alpha.txt").toString().split(/\r?\n/).reduce
                 prev.push({
                     word: line,
                     chars: line.split("").sort(),
-                    intchars: line.split("").sort().map(char => char.charCodeAt(0)),
+                    dictIndex: myAlph,
                     neighbors: []
                 });
 
+                //increment the buckets so we know which is the least frequent
                 for (let i = 0; i < globalOptions.wordsize; i++) {
-                    buckets[line.charCodeAt(i) - "a".charCodeAt(0)].val++;
+                    letterDistributions[line.charCodeAt(i) - "a".charCodeAt(0)].val++;
                 }
 
                 anagramMappings[myAlph] = [line];
@@ -258,55 +284,27 @@ const data = fs.readFileSync("words_alpha.txt").toString().split(/\r?\n/).reduce
 process.stdout.write("Sorting data        \r");
 
 /**
- * @type {Number[]}
- */
-let targetChars = buckets.sort((a, b) => a.val - b.val)
-    .reduce((previousValue, currentValue, currentIndex) => {
-        if (currentIndex < (27 + globalOptions.guessoffset - (globalOptions.wordcount * globalOptions.wordsize))) previousValue.push(currentValue.char.charCodeAt(0));
-        return previousValue;
-    }, []).sort();
-
-/*for (let i = 0; i < data.length; i++) {
-    data[i].numneighbors =
-        data[i].chars
-            .filter(char => targetChars.has(char)).length;
-    //.reduce((out, char) => (targetChars.has(char) ? out + 1 : out), 0)
-}*/
-
-data.sort((a, b) => {
-    /*let vala = */
-    /*if (a.numneighbors === -1) {
-        a.numneighbors = a.chars
-            .reduce((out, char) => (targetChars.has(char) ? out + 1 : out), 0);
-    }
-    if (b.numneighbors === -1) {
-        b.numneighbors = a.chars
-            .reduce((out, char) => (targetChars.has(char) ? out + 1 : out), 0);
-    }*/
-    return (b.winnersection = intersection(b.intchars, targetChars).length) - (a.winnersection = intersection(a.intchars, targetChars).length);
-    /*    if (vala) return vala;
-        return a.numneighbors - b.numneighbors*/
-});
-
-console.log();
-
-/**
- * Ok this might seem odd, but trust me when I say that by sorting the data in ascending order by who has the fewest to most
- * compatible words actaully saves more time than it takes. To do the sort
+ * These are the resolved problem characters that are least frequently found in our word base
  *
- * (xyzqv would go last since they have a LOT of connections, rstle would likely go first because a lot of words share those letters)
+ * @type {String[]}
  */
-/*sortData: {
-    for (let i = 0; i < data.length; i++) {
-        for (let j = 0; j < data.length; j++) {
-            if (i !== j && data[i].chars.every(char => !data[j].chars.includes(char))) {
-                ++data[i].numneighbors;
-            }
-        }
-    }
+let targetChars = letterDistributions
+    //most frequent letters go last
+    .sort((a, b) => a.val - b.val)
+    //we will simultaneously perform .slice(0, 27 + globalOptions.guessoffset - (globalOptions.wordcount * globalOptions.wordsize))
+    //alongside .map(val => val.char)
+    .reduce((previousValue, currentValue, currentIndex) => {
+        if (currentIndex < (27 + globalOptions.guessoffset - (globalOptions.wordcount * globalOptions.wordsize)))
+            previousValue.push(currentValue.char);
+        return previousValue;
+    }, [])
+    //just for giggles and maybe speed not sure how smart includes is?
+    .sort();
 
-    data.sort((a, b) => a.numneighbors - b.numneighbors);
-}*/
+//Take all our data, and sort it so that the words with the most targetChars come first (low indicies). Also cache this value under the objects themselves
+data.sort((a, b) => {
+    return (b.winnersection ? b.winnersection : b.winnersection = targetChars.filter(char => b.chars.includes(char)).length) - (a.winnersection ? a.winnersection : a.winnersection = targetChars.filter(char => a.chars.includes(char)).length);
+});
 
 process.stdout.write(`Connecting ${data.length} nodes for ${wordCount} words and running with it. Initialized in ${getTime()}ms\n`);
 
@@ -345,21 +343,20 @@ for (let i = data.length - 1; i >= 0; --i) {
         }
     }
 
-    //let the world know we aren't dead yet!
-    //if (!((data.length - i - 1) % 100))
-    //if we have friends, lets go ask them for some mutual friends
-    let numWeeners = data[i].winnersection;
-    if (i_sNeighbors.length && numWeeners) {
+    //if we have neighbors and at least 1 problem letter
+    if (i_sNeighbors.length && data[i].winnersection) {
         process.stdout.write(`${data.length - i - 1} ${(100 * (data.length - i - 1) / data.length).toFixed(2)}% ${totalCombinationsFound} ${getTime()}ms               \r`);
-        if (numWeeners <= globalOptions.guessoffset) {
+        //if we dont have all the problem letters required
+        if (data[i].winnersection <= globalOptions.guessoffset) {
             for (const iNeighbor of i_sNeighbors) {
+                //only attempt neighbors that have at least one more problem letter
                 if (data[iNeighbor].winnersection) {
-                    findDeepConnections(iNeighbor, intersection(i_sNeighbors, data[iNeighbor].neighbors), 2, [i, iNeighbor])
-                } else break;
-                //findDeepConnections(i, i_sNeighbors.filter(naybur => data[naybur].winnersection > 0));
+                    findDeepConnections(iNeighbor, intersection(i_sNeighbors, data[iNeighbor].neighbors), 2, [i, iNeighbor]);
+                } else
+                    break;
             }
-        }
-        else
+        } else
+            //everything is fair game
             findDeepConnections(i, i_sNeighbors);
     }
 }
