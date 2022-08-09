@@ -3,6 +3,7 @@ Improvement on https://gitlab.com/bpaassen/five_clique that sticks with the spir
 
 To run (after on local machine)
 * Download data file: `curl https://raw.githubusercontent.com/dwyl/english-words/master/words_alpha.txt>words_alpha.txt`
+* If your wordfile is downloaded already, you may want to make a symbolic link `ln -s words_alpha.txt <file location>` That way you dont have to copy it
 * Run parser: `node n-clique.js`
 
 ```
@@ -13,8 +14,6 @@ wordcount <count> : the number of words to use
 outfile <filename>: the file to write results to. Writes in csv, so it is reccommended to provide a csv file.
 ```
 
-Anagrams time: ~135s
-
-No anagrams time: ~50s
+Anagrams time: ~50s ~= No anagrams time: ~50s
 
 Uses python: no
