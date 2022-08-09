@@ -2,8 +2,8 @@
 command line usage: `node n-clique.js [OPTIONS]`
 
 OPTIONS:
-includeanagrams : if present in args, will include all anagrams.
-wordsize <size> : the size of the word to use, default is 5
+no-anagrams       : if present in args, will remove all anagrams, but this doesn't meaningfully impact runtime complexity, so you'd be silly to not
+wordsize <size>   : the size of the word to use, default is 5
 wordcount <count> : the number of words to use
 outfile <filename>: the file to write results to. Writes in csv, so it is reccommended to provide a csv file.
  */
@@ -11,16 +11,16 @@ outfile <filename>: the file to write results to. Writes in csv, so it is reccom
 let args = process.argv.slice(2);
 
 let options = {
-    "includeanagrams": false,
+    "includeanagrams": true,
     "wordsize": 5,
     "wordcount": 5
 };
 
 for (let i = 0; i < args.length; i += 2) {
     switch (args[i].toLowerCase()) {
-        case "include-anagrams":
+        case "no-anagrams":
             i--;
-            options.includeanagrams = true;
+            options.includeanagrams = false;
             break;
         case "wordsize":
             if (i + 1 === args.length)
@@ -43,8 +43,13 @@ for (let i = 0; i < args.length; i += 2) {
     }
 }
 
+/**
+ * @type {Object.<string, string[]>}
+ */
+let indexMapping = {};
+
 if (!options.outfile)
-    options["outfile"] = `${options.wordsize}x${options.wordcount},${options.includeanagrams ? "anagrams": "no_anagrams"}.csv`
+    options["outfile"] = `${options.wordsize}x${options.wordcount},${options.includeanagrams ? "anagrams" : "no_anagrams"}.csv`;
 
 if (options.wordcount * options.wordsize > 26) {
     console.error("This program was not designed to handle overlap. Please use less words or smaller words");
@@ -90,26 +95,24 @@ function unionByFloor(setA, setB) {
 process.stdout.write("Reading in data        \r");
 
 /**
- * @type {[{neighbors: number[], word: String, chars: String[], numneighbors: number}]}
+ * @type {[{neighbors: number[], word: String, alph: string, chars: String[], numneighbors: number}]}
  */
 const data = fs.readFileSync("words_alpha.txt").toString().split(/\r?\n/).reduce((prev, line) => {
     if (line.length === options.wordsize) {
-        if (!options.includeanagrams) {
-            let myAlph = line.split("").sort().join("");
-            if (prev.every(word => word.alph !== myAlph) && line.split("").every((char, windex, arr) => arr.indexOf(char) === windex)) prev.push({
-                word: line,
-                chars: line.split("").sort(),
-                alph: myAlph,
-                neighbors: [],
-                numneighbors: 0
-            });
-        } else {
-            if (line.split("").every((char, windex, arr) => arr.indexOf(char) === windex)) prev.push({
-                word: line,
-                chars: line.split(""),
-                neighbors: [],
-                numneighbors: 0
-            });
+        let myAlph = line.split("").sort().join("");
+        if (line.split("").every((char, windex, arr) => arr.indexOf(char) === windex)) {
+            if (!indexMapping[myAlph]) {
+                prev.push({
+                    word: line,
+                    chars: line.split("").sort(),
+                    alph: myAlph,
+                    neighbors: [],
+                    numneighbors: 0
+                });
+                indexMapping[myAlph] = [line];
+            } else if (options.includeanagrams) {
+                indexMapping[myAlph].push(line);
+            }
         }
     }
     return prev;
@@ -117,7 +120,7 @@ const data = fs.readFileSync("words_alpha.txt").toString().split(/\r?\n/).reduce
 
 process.stdout.write("Sorting data        \r");
 
-for (let i = 0; i < data.length; i++) {
+/*for (let i = 0; i < data.length; i++) {
     for (let j = 0; j < data.length; j++) {
         if (i !== j && data[i].chars.every(char => !data[j].chars.includes(char))) {
             ++data[i].numneighbors;
@@ -125,7 +128,7 @@ for (let i = 0; i < data.length; i++) {
     }
 }
 
-data.sort((a, b) => a.numneighbors - b.numneighbors);
+data.sort((a, b) => a.numneighbors - b.numneighbors);*/
 
 process.stdout.write("Connecting nodes        \r");
 
@@ -137,17 +140,34 @@ for (let i = 0; i < data.length; i++) {
     }
 }
 
-console.log("Created graph with", data.length , "entries.", `Took ${getTime()}ms`);
+console.log("Created graph with", data.length, "entries.", `Took ${getTime()}ms`);
 
 fs.writeFileSync(options.outfile, "");
 
 let finds = 0;
 
+function recursiveCombinations(list, n = 0, result = [], current = []) {
+    if (n === list.length) result.push(current);
+    else list[n].forEach(item => recursiveCombinations(list, n + 1, result, [...current, item]));
+
+    return result;
+}
+
 function outputResult(...res) {
-    fs.appendFileSync(options.outfile, res.reduce((previousValue, currentValue, currentIndex, array) => {
-        return previousValue + data[currentValue].word + (currentIndex !== array.length - 1 ? "," : "");
-    }, "") + "\n");
-    ++finds;
+    if (options.includeanagrams) {
+        let recurses = recursiveCombinations(res.map(windex => indexMapping[data[windex].alph]));
+        fs.appendFileSync(options.outfile,
+            recurses
+                .reduce((previousValue, currentValue, currentIndex, array) => {
+                    return previousValue + currentValue.join(",") + "\n";
+                }, ""));
+        finds += recurses.length;
+    } else {
+        fs.appendFileSync(options.outfile, res.reduce((previousValue, currentValue, currentIndex, array) => {
+            return previousValue + indexMapping[data[currentValue].alph][0] + (currentIndex !== array.length - 1 ? "," : "");
+        }, "") + "\n");
+        ++finds;
+    }
 }
 
 function recursiveFunction(startingIndex, acceptableNeighbors, depth, targetDepth, previousIndicies) {
@@ -168,4 +188,4 @@ for (let i = 0; i < data.length; i++) {
     recursiveFunction(i, i_sNeighbors, 1, options.wordcount, [i]);
 }
 
-console.log("Found" , finds, "results");
+console.log("Found", finds, "results");
