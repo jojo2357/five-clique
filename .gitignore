@@ -1,4 +1,6 @@
 words_alpha.txt
 .idea
 
-package.json
+.gradle
+gradle
+build
