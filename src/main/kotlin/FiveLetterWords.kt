@@ -1,6 +1,7 @@
 import kotlinx.coroutines.*
 import java.io.File
 import java.io.FileWriter
+import java.lang.Integer.parseInt
 import java.util.*
 import java.util.concurrent.atomic.AtomicInteger
 
@@ -8,14 +9,17 @@ val startTime = System.nanoTime()
 val letterFrequencies = mutableMapOf<Char, AtomicInteger>()
 val wordsByChars = mutableMapOf<Char, MutableSet<Word>>()
 
-fun main() {
+lateinit var settings: Settings
+
+fun main(args: Array<String>) {
+    settings= Settings.fromArgs(args)
     val words = File("words_alpha.txt")
         .readLines()                                            // load ALL THE WORDS
-        .filter { it.length == 5 && it.toSet().size == 5 }      // only keep words with five distinct letters
+        .filter { it.length == settings.wordsize && it.toSet().size == settings.wordsize }      // only keep words with five distinct letters
         .distinctBy { it.toSortedSet() }                        // remove anagrams
         .mapIndexed { i, str -> Word(str, i) }.toSet()
 
-    println("Processing ${words.size} unique five letter words...")
+    println("Processing ${words.size} unique ${settings.wordsize} letter words...")
 
     // Build a dictionary with lists of all words containing a given letter:
     //   'a' -> set of all words containing an 'a'
@@ -33,16 +37,16 @@ fun main() {
     // Optionally: printLetterFrequencies()
 
     // Do all the work!
-    val fiveWordSets = findFiveWordSets(words)
+    val wordSets = findWordSets(words)
 
     // And we are done
     println(String.format(Locale.ENGLISH, "100.0%%, %5.1f secs", (System.nanoTime() - startTime) / 1e9))
-    FileWriter("result.txt").use { writer ->
-        fiveWordSets.forEach {
+    FileWriter(settings.outfile).use { writer ->
+        wordSets.forEach {
             writer.write("$it\n")
         }
     }
-    println("Wrote result.txt containing ${fiveWordSets.size} five-word sets")
+    println("Wrote result.txt containing ${wordSets.size} ${settings.wordcount}-word sets")
 }
 
 /**
@@ -50,7 +54,7 @@ fun main() {
  * across all available CPU cores.
  * Result sets are returned as a list of comma-separated strings containing one five-word set per line.
  */
-fun findFiveWordSets(words: Set<Word>): Set<String> = runBlocking {
+fun findWordSets(words: Set<Word>): Set<String> = runBlocking {
     // Intelligently select words to begin with:
     // Since valid sets of five words will use 25 letters, there can't be a set which contains neither an 'x' nor a
     // 'q'. By selecting all words containing an 'x' or a 'q' as seeds and then searching for four more words per seed
@@ -60,8 +64,11 @@ fun findFiveWordSets(words: Set<Word>): Set<String> = runBlocking {
     // a bit.
     // As an additional minor optimization we sort the seed words, so that seeds containing more low frequency letters
     // are tested first. This isn't strictly necessary but helps in better utilizing all CPU cores until the end.
-    val seedWords = (wordsByChars['q']!! + wordsByChars['x']!!)
-        .sortedBy { w -> w.letters.sumOf { letterFrequencies[it]!!.get() } }
+    val neededSeeds = 27 - (settings.wordsize * settings.wordcount)
+    val seedWords = wordsByChars.map { item -> item.value }
+        .sortedBy { set -> set.size }
+        .subList(0, neededSeeds)
+        .reduceRight { word, acc -> (acc + word).toMutableSet() }
 
     val wordResults = mutableListOf<Deferred<Set<Set<Word>>>>()
     val progressCount = AtomicInteger()
@@ -92,7 +99,7 @@ fun findFiveWordSets(words: Set<Word>): Set<String> = runBlocking {
  * reach a recursion [depth] of 4, we found a valid set five words with only distinct letters and return it.
  */
 fun findWords(candidates: Set<Word>, addWord: Word, depth: Int): Set<Set<Word>> {
-    if (depth == 4) {
+    if (depth == settings.wordcount - 1) {
         // We reached the maximum recursion depth, i.e. we found a valid five-word set!
         // Return addWord, which will be combined with the other words of the set in the higher recursion levels.
         return setOf(setOf(addWord))
@@ -128,8 +135,12 @@ fun findWords(candidates: Set<Word>, addWord: Word, depth: Int): Set<Set<Word>> 
  */
 fun printProgress(progress: Int, size: Int) {
     if (progress % 10 == 0) {
-        println(String.format(Locale.ENGLISH, "%5.1f%%, %5.1f secs...",
-            100f * progress / size, (System.nanoTime() - startTime) / 1e9))
+        println(
+            String.format(
+                Locale.ENGLISH, "%5.1f%%, %5.1f secs...",
+                100f * progress / size, (System.nanoTime() - startTime) / 1e9
+            )
+        )
     }
 }
 
@@ -152,4 +163,49 @@ class Word(val word: String, val index: Int) : Comparable<Word> {
     override fun compareTo(other: Word): Int = index.compareTo(other.index)
     override fun equals(other: Any?): Boolean = this === other
     override fun hashCode(): Int = index
+}
+
+class Settings(var wordsize: Int, var wordcount: Int, var includeanagrams: Boolean, var outfile: String) {
+    companion object {
+        fun fromArgs(args: Array<String>): Settings {
+            var wordsize = 5
+            var wordcount = 5
+            var includeanagrams = false
+            var outfile = ""
+            for (i in 0 until args.size step 2) {
+                when (args[i].lowercase(Locale.getDefault())) {
+                    "include-anagrams" -> {
+
+                        includeanagrams = true
+                    }
+
+                    "wordsize" -> {
+                        if (i + 1 == args.size)
+                            error("No option supplied for wordsize")
+                        else
+                            wordsize = parseInt(args[i + 1])
+                    }
+
+                    "wordcount" -> {
+                        if (i + 1 == args.size)
+                            error("No option supplied for wordcount")
+                        else
+                            wordcount = parseInt(args[i + 1])
+                    }
+
+                    "outfile" -> {
+                        if (i + 1 == args.size)
+                            error("No option supplied for outfile")
+                        else
+                            outfile = args[i + 1]
+                    }
+                }
+            }
+            if (outfile.isEmpty()) {
+                outfile =
+                    wordsize.toString() + "x" + wordcount.toString() + "," + (if (includeanagrams) "anagrams" else "no_anagrams") + ".csv"
+            }
+            return Settings(wordsize, wordcount, includeanagrams, outfile)
+        }
+    }
 }

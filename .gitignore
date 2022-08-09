@@ -1,6 +1,7 @@
 words_alpha.txt
 .idea
 
+*.csv
 .gradle
 gradle
 build
