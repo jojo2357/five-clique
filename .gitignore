@@ -4,5 +4,7 @@ words_alpha.txt
 gradle
 .gradle
 build
+
 *.csv
+
 package.json
