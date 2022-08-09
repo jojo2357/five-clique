@@ -30,12 +30,13 @@ let anagramMappings = {};
 /* ---------- BEGIN PARSING COMMAND LINE ----------------*/
 
 /**
- * @type {{wordcount: number, includeanagrams: boolean, wordsize: number, outfile: string}}
+ * @type {{wordcount: number, includeanagrams: boolean, wordsize: number, outfile: string, guessoffset: number}}
  */
 let globalOptions = {
     "includeanagrams": true,
     "wordsize": 5,
-    "wordcount": 5
+    "wordcount": 5,
+    "guessoffset": 1
 };
 
 handleArgs: {
@@ -59,6 +60,12 @@ handleArgs: {
                     console.error("No option supplied for wordcount");
                 else
                     globalOptions.wordcount = Number.parseInt(args[i + 1]);
+                break;
+            case "guessoffset":
+                if (i + 1 === args.length)
+                    console.error("No option supplied for guessoffset");
+                else
+                    globalOptions.guessoffset = Number.parseInt(args[i + 1]);
                 break;
             case "outfile":
                 if (i + 1 === args.length)
@@ -89,6 +96,7 @@ if (globalOptions.wordcount < 2 || globalOptions.wordsize < 2) {
 }
 
 /* ---------- BEGIN PURE UTILITY FUNCTIONS ----------------*/
+
 //these functions can be put in a seperate file and not really care at all
 
 /**
@@ -167,15 +175,16 @@ function outputResult(...res) {
             recurses
                 .reduce((previousValue, currentValue) => {
                     return previousValue + currentValue.join(",") + "\n";
-                }, "")/*, fsCallback*/);
-        return recurses.length
+                }, ""));
+        return recurses.length;
     } else {
         fs.appendFileSync(globalOptions.outfile, res.reduce((previousValue, currentValue, currentIndex, array) => {
             return previousValue + anagramMappings[data[currentValue].chars.join("")][0] + (currentIndex !== array.length - 1 ? "," : "");
-        }, "") + "\n"/*, fsCallback*/);
+        }, "") + "\n");
         return 1;
     }
 }
+
 //these functions only rely on what the settings are to function properly, and must be retooled or go along
 // with the settings if they were to migrate to a different file
 /* ---------- FINISH SETTINGS-DEPENDENT FUNCTIONS ----------------*/
@@ -201,24 +210,44 @@ process.on('exit', () => console.log("Completed in", getTime(), "ms"));
 
 process.stdout.write("Reading in data        \r");
 
+let wordCount = 0;
+
+/**
+ * @type {{char: String, val: Number}[]}
+ */
+let buckets = [];
+
+for (let i = 'a'.charCodeAt(0); i <= 'z'.charCodeAt(0); i++) {
+    buckets.push({char: String.fromCharCode(i), val: 0});
+}
+
 /**
  * The real deal. Here comes the data!
  *
- * @type {[{neighbors: number[], word: String, chars: String[], numneighbors: number}]}
+ * @type {[{neighbors: number[], word: String, chars: String[]}]}
  */
 const data = fs.readFileSync("words_alpha.txt").toString().split(/\r?\n/).reduce((prev, line) => {
     if (line.length === globalOptions.wordsize) {
         let myAlph = line.split("").sort().join("");
         if (line.split("").every((char, windex, arr) => arr.indexOf(char) === windex)) {
             if (!anagramMappings[myAlph]) {
+                wordCount++;
+
                 prev.push({
                     word: line,
                     chars: line.split("").sort(),
-                    neighbors: [],
-                    numneighbors: 0
+                    intchars: line.split("").sort().map(char => char.charCodeAt(0)),
+                    neighbors: []
                 });
+
+                for (let i = 0; i < globalOptions.wordsize; i++) {
+                    buckets[line.charCodeAt(i) - "a".charCodeAt(0)].val++;
+                }
+
                 anagramMappings[myAlph] = [line];
             } else if (globalOptions.includeanagrams) {
+                wordCount++;
+
                 anagramMappings[myAlph].push(line);
             }
         }
@@ -229,12 +258,45 @@ const data = fs.readFileSync("words_alpha.txt").toString().split(/\r?\n/).reduce
 process.stdout.write("Sorting data        \r");
 
 /**
+ * @type {Number[]}
+ */
+let targetChars = buckets.sort((a, b) => a.val - b.val)
+    .reduce((previousValue, currentValue, currentIndex) => {
+        if (currentIndex < (27 + globalOptions.guessoffset - (globalOptions.wordcount * globalOptions.wordsize))) previousValue.push(currentValue.char.charCodeAt(0));
+        return previousValue;
+    }, []).sort();
+
+/*for (let i = 0; i < data.length; i++) {
+    data[i].numneighbors =
+        data[i].chars
+            .filter(char => targetChars.has(char)).length;
+    //.reduce((out, char) => (targetChars.has(char) ? out + 1 : out), 0)
+}*/
+
+data.sort((a, b) => {
+    /*let vala = */
+    /*if (a.numneighbors === -1) {
+        a.numneighbors = a.chars
+            .reduce((out, char) => (targetChars.has(char) ? out + 1 : out), 0);
+    }
+    if (b.numneighbors === -1) {
+        b.numneighbors = a.chars
+            .reduce((out, char) => (targetChars.has(char) ? out + 1 : out), 0);
+    }*/
+    return (b.winnersection = intersection(b.intchars, targetChars).length) - (a.winnersection = intersection(a.intchars, targetChars).length);
+    /*    if (vala) return vala;
+        return a.numneighbors - b.numneighbors*/
+});
+
+console.log();
+
+/**
  * Ok this might seem odd, but trust me when I say that by sorting the data in ascending order by who has the fewest to most
  * compatible words actaully saves more time than it takes. To do the sort
  *
  * (xyzqv would go last since they have a LOT of connections, rstle would likely go first because a lot of words share those letters)
  */
-sortData: {
+/*sortData: {
     for (let i = 0; i < data.length; i++) {
         for (let j = 0; j < data.length; j++) {
             if (i !== j && data[i].chars.every(char => !data[j].chars.includes(char))) {
@@ -244,9 +306,9 @@ sortData: {
     }
 
     data.sort((a, b) => a.numneighbors - b.numneighbors);
-}
+}*/
 
-process.stdout.write(`Connecting ${data.length} nodes and running  \n`);
+process.stdout.write(`Connecting ${data.length} nodes for ${wordCount} words and running with it. Initialized in ${getTime()}ms\n`);
 
 /**
  * This is the workhorse recurser. It will keep going down the chain it was started on, and when it finds a result, it
@@ -270,7 +332,7 @@ function findDeepConnections(startingIndex, acceptableNeighbors, depth = 1, prev
                 findDeepConnections(newNeighbor, newNeighbors, depth + 1, [...previousIndicies, newNeighbor]);
         }
     }
-    delete previousIndicies;
+    //delete previousIndicies;
 }
 
 //this is the little block you were waiting for. It is optimized into one loop, sorry about that.
@@ -285,11 +347,22 @@ for (let i = data.length - 1; i >= 0; --i) {
 
     //let the world know we aren't dead yet!
     //if (!((data.length - i - 1) % 100))
-        process.stdout.write(`${data.length - i - 1} ${(100 * (data.length - i - 1) / data.length).toFixed(2)}% ${totalCombinationsFound} ${getTime()}ms               \r`);
     //if we have friends, lets go ask them for some mutual friends
-    if (i_sNeighbors.length)
-        findDeepConnections(i, i_sNeighbors);
+    let numWeeners = data[i].winnersection;
+    if (i_sNeighbors.length && numWeeners) {
+        process.stdout.write(`${data.length - i - 1} ${(100 * (data.length - i - 1) / data.length).toFixed(2)}% ${totalCombinationsFound} ${getTime()}ms               \r`);
+        if (numWeeners <= globalOptions.guessoffset) {
+            for (const iNeighbor of i_sNeighbors) {
+                if (data[iNeighbor].winnersection) {
+                    findDeepConnections(iNeighbor, intersection(i_sNeighbors, data[iNeighbor].neighbors), 2, [i, iNeighbor])
+                } else break;
+                //findDeepConnections(i, i_sNeighbors.filter(naybur => data[naybur].winnersection > 0));
+            }
+        }
+        else
+            findDeepConnections(i, i_sNeighbors);
+    }
 }
 
-console.log("Found", totalCombinationsFound, "results");
+console.log("\nFound", totalCombinationsFound, "results");
 //all done
