@@ -200,6 +200,8 @@ process.on('exit', () => console.log("Completed in", getTime(), "ms"));
 process.stdout.write("Reading in data        \r");
 
 /**
+ * The real deal. Here comes the data!
+ *
  * @type {[{neighbors: number[], word: String, alph: string, chars: String[], numneighbors: number}]}
  */
 const data = fs.readFileSync("words_alpha.txt").toString().split(/\r?\n/).reduce((prev, line) => {
