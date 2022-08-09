@@ -16,8 +16,6 @@ let options = {
     "wordcount": 5
 };
 
-options["outfile"] = `${options.wordsize}x${options.wordcount},${options.includeanagrams ? "anagrams": "no_anagrams"}.csv`
-
 for (let i = 0; i < args.length; i += 2) {
     switch (args[i].toLowerCase()) {
         case "include-anagrams":
@@ -44,6 +42,9 @@ for (let i = 0; i < args.length; i += 2) {
             break;
     }
 }
+
+if (!options.outfile)
+    options["outfile"] = `${options.wordsize}x${options.wordcount},${options.includeanagrams ? "anagrams": "no_anagrams"}.csv`
 
 if (options.wordcount * options.wordsize > 26) {
     console.error("This program was not designed to handle overlap. Please use less words or smaller words");
@@ -138,7 +139,7 @@ for (let i = 0; i < data.length; i++) {
 
 console.log("Created graph with", data.length , "entries.", `Took ${getTime()}ms`);
 
-fs.writeFileSync(options.outfile, "")
+fs.writeFileSync(options.outfile, "");
 
 let finds = 0;
 
