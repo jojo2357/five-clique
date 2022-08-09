@@ -66,6 +66,8 @@ handleArgs: {
                 else
                     globalOptions.outfile = args[i + 1];
                 break;
+            default:
+                i--;
         }
     }
     //default outfile is dynamic
@@ -160,17 +162,17 @@ function fsCallback(err) {
  */
 function outputResult(...res) {
     if (globalOptions.includeanagrams) {
-        let recurses = recursiveCombinations(res.map(windex => anagramMappings[data[windex].alph]));
-        fs.appendFile(globalOptions.outfile,
+        let recurses = recursiveCombinations(res.map(windex => anagramMappings[data[windex].chars.join("")]));
+        fs.appendFileSync(globalOptions.outfile,
             recurses
                 .reduce((previousValue, currentValue) => {
                     return previousValue + currentValue.join(",") + "\n";
-                }, ""), fsCallback);
+                }, "")/*, fsCallback*/);
         return recurses.length
     } else {
-        fs.appendFile(globalOptions.outfile, res.reduce((previousValue, currentValue, currentIndex, array) => {
-            return previousValue + anagramMappings[data[currentValue].alph][0] + (currentIndex !== array.length - 1 ? "," : "");
-        }, "") + "\n", fsCallback);
+        fs.appendFileSync(globalOptions.outfile, res.reduce((previousValue, currentValue, currentIndex, array) => {
+            return previousValue + anagramMappings[data[currentValue].chars.join("")][0] + (currentIndex !== array.length - 1 ? "," : "");
+        }, "") + "\n"/*, fsCallback*/);
         return 1;
     }
 }
@@ -202,7 +204,7 @@ process.stdout.write("Reading in data        \r");
 /**
  * The real deal. Here comes the data!
  *
- * @type {[{neighbors: number[], word: String, alph: string, chars: String[], numneighbors: number}]}
+ * @type {[{neighbors: number[], word: String, chars: String[], numneighbors: number}]}
  */
 const data = fs.readFileSync("words_alpha.txt").toString().split(/\r?\n/).reduce((prev, line) => {
     if (line.length === globalOptions.wordsize) {
@@ -212,7 +214,6 @@ const data = fs.readFileSync("words_alpha.txt").toString().split(/\r?\n/).reduce
                 prev.push({
                     word: line,
                     chars: line.split("").sort(),
-                    alph: myAlph,
                     neighbors: [],
                     numneighbors: 0
                 });
@@ -245,7 +246,7 @@ sortData: {
     data.sort((a, b) => a.numneighbors - b.numneighbors);
 }
 
-process.stdout.write(`Connecting ${data.length} nodes and running`);
+process.stdout.write(`Connecting ${data.length} nodes and running  \n`);
 
 /**
  * This is the workhorse recurser. It will keep going down the chain it was started on, and when it finds a result, it
@@ -269,6 +270,7 @@ function findDeepConnections(startingIndex, acceptableNeighbors, depth = 1, prev
                 findDeepConnections(newNeighbor, newNeighbors, depth + 1, [...previousIndicies, newNeighbor]);
         }
     }
+    delete previousIndicies;
 }
 
 //this is the little block you were waiting for. It is optimized into one loop, sorry about that.
@@ -282,8 +284,8 @@ for (let i = data.length - 1; i >= 0; --i) {
     }
 
     //let the world know we aren't dead yet!
-    if (!((data.length - i - 1) % 100))
-        console.log(data.length - i - 1, (100 * (data.length - i - 1) / data.length).toFixed(2) + "%", totalCombinationsFound);
+    //if (!((data.length - i - 1) % 100))
+        process.stdout.write(`${data.length - i - 1} ${(100 * (data.length - i - 1) / data.length).toFixed(2)}% ${totalCombinationsFound} ${getTime()}ms               \r`);
     //if we have friends, lets go ask them for some mutual friends
     if (i_sNeighbors.length)
         findDeepConnections(i, i_sNeighbors);
