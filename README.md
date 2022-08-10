@@ -27,23 +27,20 @@ Uses python: no
 ### Data
 
 Here lies the results of some quick unscientific testing that I did. I would like to draw the reader's attention to the
-fact that **none** of these tests overran the
-one-hour barrier, let alone the one-month barrier.
+fact that **none** of these tests were even close to overrunning the one-hour barrier, let alone the one-month barrier.
 
-**NEW TIMES COMING SOON**
-
-| Word Size | Word Count | Anagrams? | Pool Size |    Winners    | Best time (ms) | 0 offset (ms) | 1 offset (ms) | 2 offset (ms) |
-|:---------:|:----------:|:---------:|:---------:|:-------------:|:---------------|:-------------:|:--------------|:--------------|
-|     4     |     6      |     y     |   5549    | `111_898_839` |                |               |               |               |
-|     4     |     6      |     n     |   5977    | `41_658_816`  |                |               |               |               |
-|     5     |     5      |     y     |   10175   |      831      |                |               |               |               |
-|     5     |     5      |     n     |   5977    |      538      |                |               |               |               |
-|     5     |     4      |     y     |   10175   | `56_692_666`  |                |               |               |               |
-|     5     |     4      |     n     |   5977    | `26_133_319`  |                |               |               |               |
-|     6     |     4      |     y     |   13857   |       5       |                |               |               |               |
-|     6     |     4      |     n     |   8988    |       5       |                |               |               |               |
-|     7     |     3      |     y     |   13661   |     1877      |                |               |               |               |
-|     7     |     3      |     n     |   10024   |     1593      |                |               |               |               |
-|     8     |     3      |     y     |   10428   |     **0**     |                |               |               |               |
-|     8     |     2      |     y     |   10428   |     53013     |                |               |               |               |
-|     8     |     2      |     n     |   8452    |     45214     |                |               |               |               |
+| Word Size | Word Count | Anagrams? | Pool Size |       Winners | Best time (ms) | guessoffset used |
+|:---------:|:----------:|:---------:|:---------:|--------------:|---------------:|:-----------------|
+|     4     |     6      |     y     |   5549    | `111_898_839` |      `669_057` | 3                |
+|     4     |     6      |     n     |   5977    |  `41_658_816` |      `613_278` | 3                |
+|     5     |     5      |     y     |   10175   |         `831` |        `1_987` | 2                |
+|     5     |     5      |     n     |   5977    |         `538` |        `1_957` | 2                |
+|     5     |     4      |     y     |   10175   |  `56_692_666` |      `246_195` | 2                |
+|     5     |     4      |     n     |   5977    |  `26_133_319` |      `215_487` | 2                |
+|     6     |     4      |     y     |   13857   |           `5` |        `2_456` | 1                |
+|     6     |     4      |     n     |   8988    |           `5` |        `2_557` | 1                |
+|     7     |     3      |     y     |   13661   |       `1_877` |        `2_719` | 1                |
+|     7     |     3      |     n     |   10024   |       `1_593` |        `2_653` | 1                |
+|     8     |     3      |     y     |   10428   |         **0** |        `1_745` | 4                |
+|     8     |     2      |     y     |   10428   |      `53_013` |        `2_200` | 3                |
+|     8     |     2      |     n     |   8452    |      `45_214` |        `2_166` | 4                |

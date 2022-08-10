@@ -2,10 +2,11 @@
 command line usage: `node n-clique.js [OPTIONS]`
 
 OPTIONS:
-no-anagrams       : if present in args, will remove all anagrams, but this doesn't meaningfully impact runtime complexity, so you'd be silly to not
-wordsize <size>   : the size of the word to use, default is 5
-wordcount <count> : the number of words to use
-outfile <filename>: the file to write results to. Writes in csv, so it is reccommended to provide a csv file.
+no-anagrams          : if present in args, will remove all anagrams, but this doesn't meaningfully impact runtime complexity, so you'd be silly to not
+guessoffset <offset> : specify the amount of extra seed letters to use above the minimum
+wordsize <size>      : the size of the word to use, default is 5
+wordcount <count>    : the number of words to use
+outfile <filename>   : the file to write results to. Writes in csv, so it is reccommended to provide a csv file.
  */
 
 //begin imports
@@ -50,7 +51,7 @@ let globalOptions = {
     "includeanagrams": true,
     "wordsize": 5,
     "wordcount": 5,
-    "guessoffset": 1
+    "guessoffset": 2
 };
 
 handleArgs: {
@@ -99,8 +100,11 @@ handleArgs: {
 }
 
 /* ---------- FINISH PARSING COMMAND LINE ----------------*/
-
-if (globalOptions.wordcount * globalOptions.wordsize > 26) {
+/**
+ * @type {number}
+ */
+const numbersRequired = globalOptions.wordcount * globalOptions.wordsize;
+if (numbersRequired > 26) {
     console.error("This program was not designed to handle overlap. Please use less words or smaller words");
     process.exit(-1);
 }
@@ -262,7 +266,7 @@ const data = fs.readFileSync("words_alpha.txt").toString().split(/\r?\n/).reduce
                     word: line,
                     chars: line.split("").sort(),
                     dictIndex: myAlph,
-                    neighbors: []
+                    neighbors: [],
                 });
 
                 //increment the buckets so we know which is the least frequent
@@ -294,7 +298,7 @@ let targetChars = letterDistributions
     //we will simultaneously perform .slice(0, 27 + globalOptions.guessoffset - (globalOptions.wordcount * globalOptions.wordsize))
     //alongside .map(val => val.char)
     .reduce((previousValue, currentValue, currentIndex) => {
-        if (currentIndex < (27 + globalOptions.guessoffset - (globalOptions.wordcount * globalOptions.wordsize)))
+        if (currentIndex < globalOptions.guessoffset + (27 - numbersRequired))
             previousValue.push(currentValue.char);
         return previousValue;
     }, [])
@@ -316,9 +320,14 @@ process.stdout.write(`Connecting ${data.length} nodes for ${wordCount} words and
  * @param {number[]} acceptableNeighbors
  * @param {number} depth
  * @param {number[]} previousIndicies
+ * @param {number} problemLetterCount
  */
-function findDeepConnections(startingIndex, acceptableNeighbors, depth = 1, previousIndicies = [startingIndex]) {
+function findDeepConnections(startingIndex, acceptableNeighbors, depth = 1, previousIndicies = [startingIndex], problemLetterCount = data[startingIndex].winnersection) {
+    let needsMoreLetters = problemLetterCount < targetChars.length - (26 - numbersRequired);
     for (const newNeighbor of acceptableNeighbors) {
+        //if we need more problem letters, and this one has none, then we have nothing left to scan for, the next ones wont help
+        if (needsMoreLetters && !data[newNeighbor].winnersection)
+            break;
         //have we got to the holy grail?
         if (depth === globalOptions.wordcount - 1) {
             //Yes! Now phone home and tell them what we found (tell them the indicies in order)
@@ -327,7 +336,7 @@ function findDeepConnections(startingIndex, acceptableNeighbors, depth = 1, prev
             //No, but we have a clue, lets find who to talk to
             let newNeighbors = intersection(acceptableNeighbors, data[newNeighbor].neighbors);
             if (newNeighbors.length)
-                findDeepConnections(newNeighbor, newNeighbors, depth + 1, [...previousIndicies, newNeighbor]);
+                findDeepConnections(newNeighbor, newNeighbors, depth + 1, [...previousIndicies, newNeighbor], problemLetterCount + data[newNeighbor].winnersection);
         }
     }
     //delete previousIndicies;
@@ -336,28 +345,16 @@ function findDeepConnections(startingIndex, acceptableNeighbors, depth = 1, prev
 //this is the little block you were waiting for. It is optimized into one loop, sorry about that.
 for (let i = data.length - 1; i >= 0; --i) {
     //first we have to locate our friends which all happen to be at indicies above ours and -- coincidentally -- all have their friends figured out
-    let i_sNeighbors = data[i].neighbors;
     for (let j = i + 1; j < data.length; j++) {
         if (data[i].chars.every(char => !data[j].chars.includes(char))) {
-            i_sNeighbors.push(j);
+            data[i].neighbors.push(j);
         }
     }
 
     //if we have neighbors and at least 1 problem letter
-    if (i_sNeighbors.length && data[i].winnersection) {
+    if (data[i].neighbors.length && data[i].winnersection) {
         process.stdout.write(`${data.length - i - 1} ${(100 * (data.length - i - 1) / data.length).toFixed(2)}% ${totalCombinationsFound} ${getTime()}ms               \r`);
-        //if we dont have all the problem letters required
-        if (data[i].winnersection <= globalOptions.guessoffset) {
-            for (const iNeighbor of i_sNeighbors) {
-                //only attempt neighbors that have at least one more problem letter
-                if (data[iNeighbor].winnersection) {
-                    findDeepConnections(iNeighbor, intersection(i_sNeighbors, data[iNeighbor].neighbors), 2, [i, iNeighbor]);
-                } else
-                    break;
-            }
-        } else
-            //everything is fair game
-            findDeepConnections(i, i_sNeighbors);
+        findDeepConnections(i, data[i].neighbors);
     }
 }
 
