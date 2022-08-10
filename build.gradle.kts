@@ -21,5 +21,5 @@ tasks.withType<KotlinCompile> {
 }
 
 application {
-    mainClass.set("FiveLetterWordsKt")
+    mainClass.set("NCliqueKt")
 }

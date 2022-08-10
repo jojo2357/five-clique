@@ -1,17 +1,24 @@
-import kotlinx.coroutines.*
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileWriter
-import java.lang.Integer.parseInt
 import java.util.*
 import java.util.concurrent.atomic.AtomicInteger
-import kotlin.collections.ArrayList
 
 val startTime = System.nanoTime()
 
 lateinit var settings: Settings
 lateinit var words: List<Word>
 
-val results = mutableSetOf<List<Int>>()
+val results = mutableSetOf<Array<Int>>()
+
+const val extras = 2
+
+val letterCounts = Array<Helper>(26) { windex -> Helper('a' + windex, AtomicInteger(0)) }
+
+class Helper(val character: Char, val count: AtomicInteger)
 
 fun main(args: Array<String>) {
     settings = Settings.fromArgs(args)
@@ -31,17 +38,23 @@ fun main(args: Array<String>) {
     println("Processing ${words.size} ${settings.wordsize} letter words...")
 
     words.forEach { word ->
-        word.numneighbors = words.count { otherword->word.letters.intersect(otherword.letters.asIterable().toSet()).isEmpty() }
-    }
-
-    words.sortedBy { it.numneighbors.toInt() }
-
-    for (i in words.indices) {
-        for (j in i+1 until words.size) {
-            if (words[i].letters.intersect(words[j].letters.asIterable().toSet()).isEmpty())
-                words[i].neighbors.add(j)
+        word.letters.forEach { char ->
+            letterCounts[char - 'a'].count.incrementAndGet()
         }
     }
+
+    letterCounts.sortBy { it.count.toInt() }
+
+    val letterSet = letterCounts.map { it.character }.subList(0, 2 + extras).toSet()
+
+    words.forEach {
+        it.numRarities = it.letters.intersect(letterSet).size
+    }
+
+    words = words.sortedBy { -it.numRarities }
+
+    println(String.format(Locale.ENGLISH, "100.0%%, %5.1f secs", (System.nanoTime() - startTime) / 1e9))
+
     findWordSets(words)
 
     // And we are done
@@ -73,13 +86,25 @@ fun unionByFloor(setA: ArrayList<Int>, setB: ArrayList<Int>): ArrayList<Int> {
     return localOut
 }
 
-fun recursiveFunction(startingIndex: Int, acceptableNeighbors: ArrayList<Int>, depth: Int = 1, previousIndicies: List<Int> = arrayListOf(startingIndex)) {
-    val newNeighbors = unionByFloor(acceptableNeighbors, words[startingIndex].neighbors);
-    for (newNeighbor in newNeighbors) {
+fun recursiveFunction(
+    startingIndex: Int,
+    previousIndicies: Array<Int>,
+    acceptableNeighbors: ArrayList<Int>,
+    depth: Int = 1
+) {
+    val needsMoreRarities =
+        previousIndicies.foldIndexed(0) { index, acc, i -> acc + if (index < depth) {
+            words[i].numRarities
+        } else 0 } < 1 + extras
+    for (newNeighbor in acceptableNeighbors) {
+        if (needsMoreRarities && words[newNeighbor].numRarities == 0)
+            break;
+        previousIndicies[depth] = newNeighbor
         if (depth == settings.wordcount - 1) {
-            results.add(previousIndicies + newNeighbor);
+            results.add(previousIndicies.clone());
         } else {
-            recursiveFunction(newNeighbor, newNeighbors, depth + 1, previousIndicies + newNeighbor);
+            val newNeighbors = unionByFloor(acceptableNeighbors, words[newNeighbor].neighbors);
+            recursiveFunction(newNeighbor, previousIndicies, newNeighbors, depth + 1);
         }
     }
 }
@@ -92,13 +117,21 @@ fun recursiveFunction(startingIndex: Int, acceptableNeighbors: ArrayList<Int>, d
 fun findWordSets(words: List<Word>) = runBlocking {
     val progressCount = AtomicInteger()
     withContext(Dispatchers.Default) {
-        for (i in words.indices) {
-            async {
-                recursiveFunction(i, words[i].neighbors)
-                if (progressCount.incrementAndGet() % 100 == 0)
-                    println(progressCount.toInt().toString() + " " + ("%.2f").format(100 * progressCount.toDouble() / words.size) + "% " + results.size.toString())
-                //printProgress(progressCount.incrementAndGet(), words.size);
+        for (i in words.size - 1 downTo 0) {
+            for (j in i + 1 until words.size) {
+                if (words[i].letters.intersect(words[j].letters.asIterable().toSet()).isEmpty())
+                    words[i].neighbors.add(j)
             }
+            if (words[i].numRarities > 0) {
+                async {
+                    val arr = Array<Int>(settings.wordcount) { windex -> if (windex == 0) i else -1 }
+                    recursiveFunction(i, arr, words[i].neighbors)
+                    if (progressCount.incrementAndGet() % 100 == 0)
+                        print(
+                            "${progressCount.toInt()} ${("%.2f").format(100 * progressCount.toDouble() / words.size)}% ${results.size}\r"
+                        )
+                }
+            } else progressCount.incrementAndGet()
         }
     }
 }
@@ -122,6 +155,7 @@ fun printProgress(progress: Int, size: Int) {
  */
 class Word(val word: String, val createdIndex: Int, val neighbors: ArrayList<Int>) : Comparable<Word> {
     lateinit var numneighbors: Number
+    var numRarities = -1
     val letters = word.toCharArray()
     override fun compareTo(other: Word): Int = createdIndex.compareTo(other.createdIndex)
     override fun equals(other: Any?): Boolean = this === other
@@ -145,14 +179,14 @@ class Settings(var wordsize: Int, var wordcount: Int, var includeanagrams: Boole
                         if (i + 1 == args.size)
                             error("No option supplied for wordsize")
                         else
-                            wordsize = parseInt(args[i + 1])
+                            wordsize = Integer.parseInt(args[i + 1])
                     }
 
                     "wordcount" -> {
                         if (i + 1 == args.size)
                             error("No option supplied for wordcount")
                         else
-                            wordcount = parseInt(args[i + 1])
+                            wordcount = Integer.parseInt(args[i + 1])
                     }
 
                     "outfile" -> {
